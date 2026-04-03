@@ -65,6 +65,36 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
 
     'routes' => [
         [
+            // Regenerate all thumbs for all listed pages
+            // GET /thumbzer/regenerate
+            'pattern' => 'thumbzer/regenerate',
+            'action'  => function () {
+                set_time_limit(0);
+
+                $results = ['generated' => 0, 'skipped' => 0, 'errors' => []];
+
+                $pages = kirby()->site()->index()->filterBy('slug', '!=', 'thumbs');
+
+                foreach ($pages as $page) {
+                    foreach ($page->files()->filterBy('type', 'image') as $file) {
+                        if (in_array($file->extension(), ['gif', 'svg'])) continue;
+
+                        try {
+                            $before = ThumbGenerator::countExisting($file);
+                            ThumbGenerator::generate($file);
+                            $after = ThumbGenerator::countExisting($file);
+                            $results['generated'] += ($after - $before);
+                            $results['skipped']   += $before;
+                        } catch (\Exception $e) {
+                            $results['errors'][] = $file->id() . ': ' . $e->getMessage();
+                        }
+                    }
+                }
+
+                return \Kirby\Http\Response::json($results);
+            }
+        ],
+        [
             'pattern' => 'content/(:all)/thumbs/(:any)',
             'action'  => function (string $path, string $filename) {
                 $root = kirby()->root('content') . '/' . $path . '/thumbs/' . $filename;

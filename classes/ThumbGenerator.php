@@ -75,6 +75,20 @@ class ThumbGenerator
         return kirby()->url() . '/content/' . $file->page()->diruri() . '/thumbs/' . static::thumbFilename($file, $width, $format);
     }
 
+    // ── Count ────────────────────────────────────────────────────────────────
+
+    public static function countExisting(File $file): int
+    {
+        $count  = 0;
+        $format = static::format();
+        foreach (static::sizes() as $width) {
+            if (file_exists(static::thumbPath($file, $width, $format))) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
     // ── Generation ───────────────────────────────────────────────────────────
 
     public static function generate(File $file): void

@@ -1,38 +1,26 @@
 <?php
 /**
- * Test ICC Profile — WebP Comparison
+ * Test ICC Profile — Original vs thumb existant
+ * Pas de génération à l'ouverture — utilise les fichiers déjà présents.
  */
 
-$bin      = kirby()->option('thumbs.bin', 'convert');
-$identify = str_replace('convert', 'identify', $bin);
-$width    = 1200;
-$quality  = 90;
+use Rllngr\Thumbzer\ThumbGenerator;
 
-$thumbDir = kirby()->root('content') . '/test-icc/thumbs/';
-$thumbUrl = kirby()->url() . '/content/test-icc/thumbs/';
-
-// ?file=projects/mon-projet/image.jpg  →  image spécifique depuis le panel
-// sinon  →  images déposées dans content/test-icc/
+// ── Résolution de l'image ────────────────────────────────────────────────────
 if ($fileId = get('file')) {
-    // file.id format = "projects/page-slug/image.jpg"
-    $parts    = explode('/', $fileId);
-    $filename = array_pop($parts);
+    $parts      = explode('/', $fileId);
+    $filename   = array_pop($parts);
     $sourcePage = page(implode('/', $parts));
-    $img = $sourcePage ? $sourcePage->file($filename) : null;
+    $img        = $sourcePage ? $sourcePage->file($filename) : null;
     $testImages = $img ? [$img] : [];
 } else {
     $testImages = $page->images()->filterBy('extension', 'in', ['jpg', 'jpeg'])->toArray(fn($img) => $img);
 }
 
-function generateThumb(string $bin, string $src, string $dst, int $width, int $quality, bool $strip): bool
-{
-    if (file_exists($dst)) return true;
-    $stripFlag = $strip ? '-strip' : '';
-    exec("{$bin} " . escapeshellarg($src) . " -resize {$width}x {$stripFlag} -quality {$quality} " . escapeshellarg($dst) . " 2>&1", $out, $code);
-    return $code === 0;
-}
+// ── Données par image ────────────────────────────────────────────────────────
+$identify = str_replace('convert', 'identify', kirby()->option('thumbs.bin', 'convert'));
 
-function getProfileInfo(string $identify, string $file): array
+function icc_profileInfo(string $identify, string $file): array
 {
     if (!file_exists($file)) return ['colorspace' => '—', 'icc' => 'absent'];
     $colorspace = trim(shell_exec("{$identify} -format '%[colorspace]' " . escapeshellarg($file) . " 2>/dev/null") ?? '—');
@@ -40,40 +28,43 @@ function getProfileInfo(string $identify, string $file): array
     return ['colorspace' => $colorspace ?: '—', 'icc' => $icc ? $icc . 'B' : 'absent'];
 }
 
-function fileKb(string $path): string
+function icc_fileKb(string $path): string
 {
     return file_exists($path) ? round(filesize($path) / 1024) . ' KB' : '—';
 }
 
-// Génère aussi un JPG redimensionné pour que les 3 sources aient les mêmes dimensions
 $items = [];
 foreach ($testImages as $img) {
-    $slug        = 'test';
-    $safeName    = $img->name();
-    $src         = $img->root();
-    $dstOrig     = $thumbDir . $slug . '-orig-'     . $safeName . '.jpg';
-    $dstStripped = $thumbDir . $slug . '-stripped-' . $safeName . '.webp';
-    $dstIcc      = $thumbDir . $slug . '-icc-'      . $safeName . '.webp';
+    // Thumb existant le plus grand disponible
+    $sizes     = ThumbGenerator::sizes();
+    $format    = ThumbGenerator::format();
+    $thumbPath = null;
+    $thumbUrl  = null;
 
-    generateThumb($bin, $src, $dstOrig,     $width, $quality, false); // JPG redim, sans strip
-    generateThumb($bin, $src, $dstStripped, $width, $quality, true);
-    generateThumb($bin, $src, $dstIcc,      $width, $quality, false);
-
-    // Aspect ratio à partir du fichier redimensionné pour un container stable
-    $ratio = $img->height() > 0 ? round(($img->height() / $img->width()) * 100, 4) : 66.66;
+    foreach (array_reverse($sizes, true) as $key => $width) {
+        $path = ThumbGenerator::thumbPath($img, $width, $format);
+        if (file_exists($path)) {
+            $thumbPath = $path;
+            $thumbUrl  = ThumbGenerator::thumbUrl($img, $width, $format);
+            $thumbSize = $width;
+            break;
+        }
+    }
 
     $items[] = [
-        'label'        => $img->filename(),
-        'ratio'        => $ratio,
-        'urlOrig'      => $thumbUrl . $slug . '-orig-'     . $safeName . '.jpg',
-        'urlStripped'  => $thumbUrl . $slug . '-stripped-' . $safeName . '.webp',
-        'urlIcc'       => $thumbUrl . $slug . '-icc-'      . $safeName . '.webp',
-        'infoOrig'     => getProfileInfo($identify, $dstOrig),
-        'infoStripped' => getProfileInfo($identify, $dstStripped),
-        'infoIcc'      => getProfileInfo($identify, $dstIcc),
-        'sizeOrig'     => fileKb($dstOrig),
-        'sizeStripped' => fileKb($dstStripped),
-        'sizeIcc'      => fileKb($dstIcc),
+        'label'       => $img->filename(),
+        'page'        => $img->page()->title()->value(),
+        'urlOrig'     => $img->url(),
+        'rootOrig'    => $img->root(),
+        'urlThumb'    => $thumbUrl,
+        'rootThumb'   => $thumbPath,
+        'thumbSize'   => $thumbSize ?? null,
+        'thumbFormat' => strtoupper($format),
+        'sizeOrig'    => icc_fileKb($img->root()),
+        'sizeThumb'   => $thumbPath ? icc_fileKb($thumbPath) : '—',
+        'infoOrig'    => icc_profileInfo($identify, $img->root()),
+        'infoThumb'   => $thumbPath ? icc_profileInfo($identify, $thumbPath) : ['colorspace' => '—', 'icc' => 'absent'],
+        'hasThumb'    => $thumbPath !== null,
     ];
 }
 ?>
@@ -82,283 +73,262 @@ foreach ($testImages as $img) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test ICC — 6Real</title>
+  <title>ICC Test — Kirby Thumbzer</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --color-gray-100: hsl(210, 16%, 96%);
+      --color-gray-200: hsl(210, 14%, 89%);
+      --color-gray-300: hsl(210, 12%, 80%);
+      --color-gray-400: hsl(210, 10%, 60%);
+      --color-gray-500: hsl(210, 9%,  45%);
+      --color-gray-600: hsl(210, 9%,  35%);
+      --color-gray-700: hsl(210, 9%,  25%);
+      --color-gray-800: hsl(210, 10%, 16%);
+      --color-gray-900: hsl(210, 12%, 10%);
+      --color-white: #fff;
+      --color-green-400: hsl(142, 52%, 42%);
+      --color-green-100: hsl(142, 52%, 95%);
+      --color-red-400:   hsl(0, 65%, 50%);
+      --color-red-100:   hsl(0, 65%, 95%);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+      --font-mono: "SF Mono", "Fira Code", monospace;
+      --text-xs: 0.65rem;
+      --text-sm: 0.75rem;
+      --text-md: 0.875rem;
+      --rounded-sm: 3px;
+      --rounded: 6px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.06);
+    }
+
     body {
-      font-family: 'Courier New', monospace;
-      background: #0e0e0e;
-      color: #ccc;
-      padding: 2rem;
-    }
-
-    .header { margin-bottom: 3rem; padding-bottom: 1rem; border-bottom: 1px solid #1e1e1e; }
-    .header h1 { font-size: 0.7rem; color: #3a3a3a; letter-spacing: 0.12em; text-transform: uppercase; }
-    .header p  { font-size: 0.6rem; color: #2a2a2a; margin-top: 0.4rem; }
-
-    .block {
+      font-family: var(--font-sans);
+      font-size: var(--text-md);
+      background: var(--color-gray-100);
+      color: var(--color-gray-800);
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 2rem 0;
     }
-    .block__title { font-size: 0.6rem; color: #2e2e2e; letter-spacing: 0.06em; margin-bottom: 1rem; }
-    hr { border: none; border-top: 1px solid #1a1a1a; margin: 0; }
 
-    /* ── Controls ── */
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.75rem;
+    /* ── Topbar ── */
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--color-white);
+      border-bottom: 1px solid var(--color-gray-200);
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0 1.5rem; height: 3rem;
     }
-    .controls__label { font-size: 0.55rem; color: #2e2e2e; text-transform: uppercase; letter-spacing: 0.1em; margin-right: 0.25rem; }
+    .topbar__back {
+      display: flex; align-items: center; gap: .4rem;
+      font-size: var(--text-sm); color: var(--color-gray-500);
+      text-decoration: none; padding: .35rem .6rem;
+      border-radius: var(--rounded-sm);
+      transition: background .1s, color .1s;
+    }
+    .topbar__back:hover { background: var(--color-gray-100); color: var(--color-gray-800); }
+    .topbar__back svg { width: 14px; height: 14px; }
+    .topbar__title { font-size: var(--text-sm); font-weight: 500; color: var(--color-gray-700); }
+    .topbar__file  { font-size: var(--text-xs); color: var(--color-gray-400); font-family: var(--font-mono); margin-left: auto; }
 
-    .btn {
-      font-family: inherit;
-      font-size: 0.6rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      padding: 0.35em 0.9em;
-      border: 1px solid #222;
-      background: transparent;
-      color: #3a3a3a;
-      cursor: pointer;
-      border-radius: 2px;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-    }
-    .btn:hover   { border-color: #3a3a3a; color: #666; }
-    .btn.active  { background: #1c1c1c; border-color: #555; color: #ccc; }
+    /* ── Page ── */
+    .page { min-height: calc(100vh - 3rem); display: flex; flex-direction: column; }
+
+    /* ── Block ── */
+    .block { flex: 1; display: flex; flex-direction: column; padding: 1.5rem; gap: 1rem; }
 
     /* ── Comparateur ── */
     .cmp {
-      position: relative;
-      overflow: hidden;
-      cursor: ew-resize;
-      user-select: none;
-      touch-action: none;
-      background: #111;
-      flex: 1;
-      min-height: 0; /* essentiel pour que flex:1 respecte la hauteur parent */
+      position: relative; overflow: hidden;
+      cursor: ew-resize; user-select: none; touch-action: none;
+      flex: 1; min-height: 0;
+      border-radius: var(--rounded);
+      background: var(--color-gray-900);
+      box-shadow: var(--shadow);
     }
-
-    /* Toutes les images occupent exactement le même espace */
     .cmp__img {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain; /* contain = image entière visible, sans crop */
-      pointer-events: none;
-      display: block;
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: contain; pointer-events: none;
     }
-
-    /* Droite : deux sources pré-chargées, crossfade CSS */
-    .cmp__right { transition: opacity 0.25s ease; }
-    .cmp__right--stripped { z-index: 1; }
-    .cmp__right--icc      { z-index: 1; opacity: 0; }
-
-    .cmp[data-mode="icc"] .cmp__right--stripped { opacity: 0; }
-    .cmp[data-mode="icc"] .cmp__right--icc      { opacity: 1; }
-
-    /* Gauche : original clippé — z-index 2 pour être au-dessus */
     .cmp__left {
       z-index: 2;
       clip-path: inset(0 calc(100% - var(--split, 50%)) 0 0);
     }
-
-    /* Handle */
     .cmp__handle {
-      position: absolute;
-      top: 0; bottom: 0;
+      position: absolute; top: 0; bottom: 0;
       left: var(--split, 50%);
       transform: translateX(-50%);
-      width: 1px;
-      background: rgba(255,255,255,0.5);
-      z-index: 3;
-      pointer-events: none;
+      width: 2px; background: rgba(255,255,255,.6);
+      z-index: 3; pointer-events: none;
     }
     .cmp__handle::after {
       content: '';
-      position: absolute;
-      top: 50%; left: 50%;
+      position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.9);
-      box-shadow: 0 1px 6px rgba(0,0,0,0.5);
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23555' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M7 5l-4 5 4 5M13 5l4 5-4 5'/%3E%3C/svg%3E");
-      background-size: 18px;
-      background-position: center;
-      background-repeat: no-repeat;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--color-white);
+      box-shadow: 0 1px 6px rgba(0,0,0,.3);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M7 5l-4 5 4 5M13 5l4 5-4 5'/%3E%3C/svg%3E");
+      background-size: 16px; background-position: center; background-repeat: no-repeat;
     }
-
-    /* Labels */
     .cmp__tag {
-      position: absolute;
-      top: 0.75rem;
-      z-index: 4;
-      font-size: 0.55rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      padding: 0.25em 0.65em;
-      border-radius: 2px;
+      position: absolute; top: .75rem; z-index: 4;
+      font-size: var(--text-xs); font-weight: 500;
+      padding: .25em .65em; border-radius: var(--rounded-sm);
       pointer-events: none;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(4px);
+      background: rgba(0,0,0,.5); backdrop-filter: blur(6px);
+      color: rgba(255,255,255,.8);
     }
-    .cmp__tag--l { left: 0.75rem;  color: #888; }
-    .cmp__tag--r { right: 0.75rem; color: #888; }
+    .cmp__tag--l { left: .75rem; }
+    .cmp__tag--r { right: .75rem; }
 
     /* ── Meta ── */
-    .meta {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-top: 0.75rem;
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    .meta__card {
+      background: var(--color-white); border-radius: var(--rounded);
+      box-shadow: var(--shadow); padding: .875rem 1rem;
     }
-    .meta__col { font-size: 0.6rem; line-height: 2; color: #333; }
-    .meta__col span { color: #666; }
+    .meta__card-title {
+      font-size: var(--text-xs); font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--color-gray-400); margin-bottom: .6rem;
+    }
+    .meta__rows { display: flex; flex-direction: column; gap: .3rem; }
+    .meta__row { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); }
+    .meta__key { color: var(--color-gray-500); }
+    .meta__val { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-gray-700); }
     .badge {
-      display: inline-block;
-      padding: 0.15em 0.55em;
-      border-radius: 2px;
-      font-size: 0.55rem;
-      letter-spacing: 0.05em;
+      display: inline-flex; align-items: center; gap: .25em;
+      padding: .2em .55em; border-radius: var(--rounded-sm);
+      font-size: var(--text-xs); font-weight: 500;
     }
-    .badge--ok { background: #0a1a0a; color: #3a8a3a; }
-    .badge--ko { background: #1a0a0a; color: #8a3a3a; }
+    .badge::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+    .badge--ok  { background: var(--color-green-100); color: var(--color-green-400); }
+    .badge--ok::before { background: var(--color-green-400); }
+    .badge--ko  { background: var(--color-red-100);   color: var(--color-red-400); }
+    .badge--ko::before { background: var(--color-red-400); }
+
+    /* ── No thumb warning ── */
+    .no-thumb {
+      background: var(--color-white); border-radius: var(--rounded);
+      box-shadow: var(--shadow); padding: 1.5rem;
+      font-size: var(--text-sm); color: var(--color-gray-500);
+      text-align: center;
+    }
+    .no-thumb code { font-family: var(--font-mono); color: var(--color-gray-600); }
+
+    hr { border: none; border-top: 1px solid var(--color-gray-200); }
+
+    .empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: .75rem; color: var(--color-gray-400);
+      font-size: var(--text-sm); padding: 4rem; text-align: center;
+    }
   </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>ICC Profile Comparison — 6Real / Cyril Gourdin</h1>
-  <p>← Glisser pour comparer &nbsp;·&nbsp; Boutons pour switcher la source droite</p>
+<div class="topbar">
+  <a class="topbar__back" href="javascript:history.back()">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 3L5 8l5 5"/></svg>
+    Retour
+  </a>
+  <span class="topbar__title">ICC Profile Test</span>
+  <?php if (!empty($items)): ?>
+    <span class="topbar__file"><?= htmlspecialchars($items[0]['label']) ?><?php if ($items[0]['page']): ?> — <?= htmlspecialchars($items[0]['page']) ?><?php endif ?></span>
+  <?php endif ?>
 </div>
 
-<?php foreach ($items as $i => $item): ?>
-  <?php if ($i > 0): ?><hr><?php endif ?>
+<div class="page">
 
-  <div class="block">
-    <div class="block__title"><?= htmlspecialchars($item['label']) ?></div>
-
-    <div class="controls">
-      <span class="controls__label">Source droite</span>
-
-      <button class="btn active"
-        data-cmp="cmp-<?= $i ?>"
-        data-mode="stripped"
-        data-label="WebP −strip"
-        data-src="<?= $item['urlStripped'] ?>"
-        data-size="<?= $item['sizeStripped'] ?>"
-        data-colorspace="<?= $item['infoStripped']['colorspace'] ?>"
-        data-icc="<?= $item['infoStripped']['icc'] ?>">
-        WebP −strip
-      </button>
-
-      <button class="btn"
-        data-cmp="cmp-<?= $i ?>"
-        data-mode="icc"
-        data-label="WebP +ICC"
-        data-src="<?= $item['urlIcc'] ?>"
-        data-size="<?= $item['sizeIcc'] ?>"
-        data-colorspace="<?= $item['infoIcc']['colorspace'] ?>"
-        data-icc="<?= $item['infoIcc']['icc'] ?>">
-        WebP +ICC
-      </button>
-    </div>
-
-    <!-- Comparateur -->
-    <div class="cmp" id="cmp-<?= $i ?>" data-mode="stripped" style="--split: 50%">
-
-      <!-- Droite : deux sources superposées -->
-      <img class="cmp__img cmp__right cmp__right--stripped"
-        src="<?= $item['urlStripped'] ?>" alt="" loading="eager">
-      <img class="cmp__img cmp__right cmp__right--icc"
-        src="<?= $item['urlIcc'] ?>" alt="" loading="eager">
-
-      <!-- Gauche : original, clippé -->
-      <img class="cmp__img cmp__left"
-        src="<?= $item['urlOrig'] ?>" alt="" loading="eager">
-
-      <div class="cmp__handle"></div>
-      <span class="cmp__tag cmp__tag--l">Original JPG</span>
-      <span class="cmp__tag cmp__tag--r" id="tag-r-<?= $i ?>">WebP −strip</span>
-    </div>
-
-    <!-- Meta -->
-    <div class="meta">
-      <div class="meta__col">
-        Original JPG (redim.) &nbsp;·&nbsp;
-        <span><?= $item['sizeOrig'] ?></span> &nbsp;·&nbsp;
-        <span><?= $item['infoOrig']['colorspace'] ?></span> &nbsp;·&nbsp;
-        ICC <span><?= $item['infoOrig']['icc'] ?></span>
-        <?php $ok = $item['infoOrig']['icc'] !== 'absent'; ?>
-        <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? 'profil présent' : 'absent' ?></span>
-      </div>
-      <div class="meta__col" id="meta-r-<?= $i ?>">
-        WebP −strip &nbsp;·&nbsp;
-        <span><?= $item['sizeStripped'] ?></span> &nbsp;·&nbsp;
-        <span><?= $item['infoStripped']['colorspace'] ?></span> &nbsp;·&nbsp;
-        ICC <span><?= $item['infoStripped']['icc'] ?></span>
-        <?php $ok = $item['infoStripped']['icc'] !== 'absent'; ?>
-        <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? 'profil présent' : 'absent' ?></span>
-      </div>
-    </div>
-
+<?php if (empty($items)): ?>
+  <div class="empty">
+    <p>Aucune image — ouvre depuis le panel ou dépose des JPG dans <code>content/test-icc/</code>.</p>
   </div>
-<?php endforeach ?>
+
+<?php else: ?>
+  <?php foreach ($items as $i => $item): ?>
+    <?php if ($i > 0): ?><hr><?php endif ?>
+
+    <div class="block">
+
+      <?php if (!$item['hasThumb']): ?>
+        <div class="no-thumb">
+          Aucun thumb trouvé pour <code><?= htmlspecialchars($item['label']) ?></code> — upload l'image depuis le panel pour le générer.
+        </div>
+      <?php else: ?>
+
+        <div class="cmp" id="cmp-<?= $i ?>" style="--split: 50%">
+          <img class="cmp__img" src="<?= $item['urlThumb'] ?>" alt="" loading="eager">
+          <img class="cmp__img cmp__left" src="<?= $item['urlOrig'] ?>" alt="" loading="eager">
+          <div class="cmp__handle"></div>
+          <span class="cmp__tag cmp__tag--l">Original</span>
+          <span class="cmp__tag cmp__tag--r"><?= $item['thumbFormat'] ?> <?= $item['thumbSize'] ?>px</span>
+        </div>
+
+      <?php endif ?>
+
+      <div class="meta">
+        <div class="meta__card">
+          <div class="meta__card-title">Original — <?= strtoupper(pathinfo($item['label'], PATHINFO_EXTENSION)) ?></div>
+          <div class="meta__rows">
+            <div class="meta__row">
+              <span class="meta__key">Taille fichier</span>
+              <span class="meta__val"><?= $item['sizeOrig'] ?></span>
+            </div>
+            <div class="meta__row">
+              <span class="meta__key">Colorspace</span>
+              <span class="meta__val"><?= $item['infoOrig']['colorspace'] ?></span>
+            </div>
+            <div class="meta__row">
+              <span class="meta__key">Profil ICC</span>
+              <?php $ok = $item['infoOrig']['icc'] !== 'absent'; ?>
+              <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? $item['infoOrig']['icc'] : 'absent' ?></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="meta__card">
+          <div class="meta__card-title">Thumb — <?= $item['hasThumb'] ? $item['thumbFormat'] . ' ' . $item['thumbSize'] . 'px' : 'non généré' ?></div>
+          <div class="meta__rows">
+            <div class="meta__row">
+              <span class="meta__key">Taille fichier</span>
+              <span class="meta__val"><?= $item['sizeThumb'] ?></span>
+            </div>
+            <div class="meta__row">
+              <span class="meta__key">Colorspace</span>
+              <span class="meta__val"><?= $item['infoThumb']['colorspace'] ?></span>
+            </div>
+            <div class="meta__row">
+              <span class="meta__key">Profil ICC</span>
+              <?php $ok = $item['infoThumb']['icc'] !== 'absent'; ?>
+              <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? $item['infoThumb']['icc'] : 'absent' ?></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  <?php endforeach ?>
+<?php endif ?>
+
+</div>
 
 <script>
-// ── Slider ──────────────────────────────────────────────────────────────────
 document.querySelectorAll('.cmp').forEach(cmp => {
   let active = false;
-
-  function update(clientX) {
+  function update(x) {
     const r   = cmp.getBoundingClientRect();
-    const pct = Math.max(2, Math.min(98, (clientX - r.left) / r.width * 100));
+    const pct = Math.max(2, Math.min(98, (x - r.left) / r.width * 100));
     cmp.style.setProperty('--split', pct + '%');
   }
-
   cmp.addEventListener('mousedown',  e => { active = true; update(e.clientX); });
   cmp.addEventListener('touchstart', e => { active = true; update(e.touches[0].clientX); }, { passive: true });
   window.addEventListener('mousemove',  e => { if (active) update(e.clientX); });
   window.addEventListener('touchmove',  e => { if (active) update(e.touches[0].clientX); }, { passive: true });
   window.addEventListener('mouseup',  () => active = false);
   window.addEventListener('touchend', () => active = false);
-});
-
-// ── Boutons switch ───────────────────────────────────────────────────────────
-document.querySelectorAll('.btn[data-cmp]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const id    = btn.dataset.cmp;
-    const cmp   = document.getElementById(id);
-    const idx   = id.split('-')[1];
-    const mode  = btn.dataset.mode;
-
-    // Switch mode (CSS fait le crossfade)
-    cmp.dataset.mode = mode;
-
-    // Mise à jour label droite
-    document.getElementById('tag-r-' + idx).textContent = btn.dataset.label;
-
-    // Mise à jour méta droite
-    const hasIcc = btn.dataset.icc !== 'absent';
-    document.getElementById('meta-r-' + idx).innerHTML =
-      btn.dataset.label + ' &nbsp;·&nbsp; ' +
-      '<span>' + btn.dataset.size + '</span> &nbsp;·&nbsp; ' +
-      '<span>' + btn.dataset.colorspace + '</span> &nbsp;·&nbsp; ' +
-      'ICC <span>' + btn.dataset.icc + '</span> ' +
-      '<span class="badge ' + (hasIcc ? 'badge--ok' : 'badge--ko') + '">' +
-      (hasIcc ? 'profil présent' : 'absent') + '</span>';
-
-    // Active state boutons
-    btn.closest('.controls').querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  });
 });
 </script>
 </body>
