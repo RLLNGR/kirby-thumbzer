@@ -1,0 +1,8 @@
+title: Test ICC
+icon: 🧪
+
+options:
+  changeStatus: true
+  delete: true
+  preview: true
+
