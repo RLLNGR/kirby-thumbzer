@@ -1,12 +1,10 @@
 <?php
 /**
  * Test ICC Profile — Original vs thumb existant
- * Pas de génération à l'ouverture — utilise les fichiers déjà présents.
  */
 
 use Rllngr\Thumbzer\ThumbGenerator;
 
-// ── Résolution de l'image ────────────────────────────────────────────────────
 if ($fileId = get('file')) {
     $parts      = explode('/', $fileId);
     $filename   = array_pop($parts);
@@ -17,7 +15,6 @@ if ($fileId = get('file')) {
     $testImages = $page->images()->filterBy('extension', 'in', ['jpg', 'jpeg'])->toArray(fn($img) => $img);
 }
 
-// ── Données par image ────────────────────────────────────────────────────────
 $identify = str_replace('convert', 'identify', kirby()->option('thumbs.bin', 'convert'));
 
 function icc_profileInfo(string $identify, string $file): array
@@ -35,11 +32,11 @@ function icc_fileKb(string $path): string
 
 $items = [];
 foreach ($testImages as $img) {
-    // Thumb existant le plus grand disponible
     $sizes     = ThumbGenerator::sizes();
     $format    = ThumbGenerator::format();
     $thumbPath = null;
     $thumbUrl  = null;
+    $thumbSize = null;
 
     foreach (array_reverse($sizes, true) as $key => $width) {
         $path = ThumbGenerator::thumbPath($img, $width, $format);
@@ -55,16 +52,16 @@ foreach ($testImages as $img) {
         'label'       => $img->filename(),
         'page'        => $img->page()->title()->value(),
         'urlOrig'     => $img->url(),
-        'rootOrig'    => $img->root(),
         'urlThumb'    => $thumbUrl,
         'rootThumb'   => $thumbPath,
-        'thumbSize'   => $thumbSize ?? null,
+        'thumbSize'   => $thumbSize,
         'thumbFormat' => strtoupper($format),
         'sizeOrig'    => icc_fileKb($img->root()),
         'sizeThumb'   => $thumbPath ? icc_fileKb($thumbPath) : '—',
         'infoOrig'    => icc_profileInfo($identify, $img->root()),
         'infoThumb'   => $thumbPath ? icc_profileInfo($identify, $thumbPath) : ['colorspace' => '—', 'icc' => 'absent'],
         'hasThumb'    => $thumbPath !== null,
+        'ext'         => strtoupper(pathinfo($img->filename(), PATHINFO_EXTENSION)),
     ];
 }
 ?>
@@ -73,77 +70,141 @@ foreach ($testImages as $img) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ICC Test — Kirby Thumbzer</title>
+  <title>ICC Test — <?= !empty($items) ? htmlspecialchars($items[0]['label']) : 'Thumbzer' ?></title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ── Kirby panel exact color system ─────────────────────────────────────── */
     :root {
-      --color-gray-100: hsl(210, 16%, 96%);
-      --color-gray-200: hsl(210, 14%, 89%);
-      --color-gray-300: hsl(210, 12%, 80%);
-      --color-gray-400: hsl(210, 10%, 60%);
-      --color-gray-500: hsl(210, 9%,  45%);
-      --color-gray-600: hsl(210, 9%,  35%);
-      --color-gray-700: hsl(210, 9%,  25%);
-      --color-gray-800: hsl(210, 10%, 16%);
-      --color-gray-900: hsl(210, 12%, 10%);
-      --color-white: #fff;
-      --color-green-400: hsl(142, 52%, 42%);
-      --color-green-100: hsl(142, 52%, 95%);
-      --color-red-400:   hsl(0, 65%, 50%);
-      --color-red-100:   hsl(0, 65%, 95%);
-      --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
-      --font-mono: "SF Mono", "Fira Code", monospace;
-      --text-xs: 0.65rem;
-      --text-sm: 0.75rem;
-      --text-md: 0.875rem;
-      --rounded-sm: 3px;
-      --rounded: 6px;
-      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.06);
+      color-scheme: light dark;
+
+      /* Gray scale — light mode (h=0, s=0%) */
+      --k-gray-100: #f9f9f9;
+      --k-gray-200: #efefef;
+      --k-gray-300: #e0e0e0;
+      --k-gray-400: #cccccc;
+      --k-gray-500: #b2b2b2;
+      --k-gray-600: #999999;
+      --k-gray-700: #727272;
+      --k-gray-800: #4c4c4c;
+      --k-gray-850: #353535;
+      --k-gray-900: #262626;
+      --k-gray-950: #111111;
+
+      /* Semantic — light */
+      --bg:        var(--k-gray-200);
+      --surface:   var(--k-gray-100);
+      --surface-2: var(--k-gray-200);
+      --border:    var(--k-gray-300);
+      --text:      #000000;
+      --text-2:    var(--k-gray-700);
+      --text-3:    var(--k-gray-500);
+
+      /* Accents — light */
+      --blue:      #3d89d5;
+      --blue-dim:  rgba(61, 137, 213, .1);
+      --green:     #89b72d;
+      --green-dim: #f2f8e6;
+      --red:       #ce1616;
+      --red-dim:   #fbe3e3;
+
+      /* Typography (exact Kirby panel values) */
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --mono: "SFMono-Regular", Consolas, Liberation Mono, Menlo, Courier, monospace;
+
+      /* Spacing & shape */
+      --radius:    .25rem;
+      --radius-lg: .375rem;
+      --radius-xl: .5rem;
     }
 
-    body {
-      font-family: var(--font-sans);
-      font-size: var(--text-md);
-      background: var(--color-gray-100);
-      color: var(--color-gray-800);
-      min-height: 100vh;
+    @media (prefers-color-scheme: dark) {
+      :root {
+        /* Gray scale — dark mode */
+        --k-gray-100: #f2f2f2;
+        --k-gray-200: #dbdbdb;
+        --k-gray-300: #bcbcbc;
+        --k-gray-400: #adadad;
+        --k-gray-500: #a3a3a3;
+        --k-gray-600: #898989;
+        --k-gray-700: #5e5e5e;
+        --k-gray-800: #3f3f3f;
+        --k-gray-850: #303030;
+        --k-gray-900: #1e1e1e;
+        --k-gray-950: #1c1c1c;
+
+        /* Semantic — dark */
+        --bg:        var(--k-gray-900);
+        --surface:   var(--k-gray-850);
+        --surface-2: var(--k-gray-800);
+        --border:    var(--k-gray-800);
+        --text:      #ffffff;
+        --text-2:    var(--k-gray-400);
+        --text-3:    var(--k-gray-700);
+
+        /* Accents — dark (Kirby exact values) */
+        --blue:      #3d89d5;
+        --blue-dim:  rgba(61, 137, 213, .12);
+        --green:     #b5da6c;
+        --green-dim: #24300c;
+        --red:       #ec5959;
+        --red-dim:   #370606;
+      }
     }
 
-    /* ── Topbar ── */
-    .topbar {
+    /* ── Base ────────────────────────────────────────────────────────────────── */
+    html, body {
+      height: 100%;
+      font-family: var(--font);
+      font-size: .875rem;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── Topbar ──────────────────────────────────────────────────────────────── */
+    .bar {
       position: sticky; top: 0; z-index: 10;
-      background: var(--color-white);
-      border-bottom: 1px solid var(--color-gray-200);
-      display: flex; align-items: center; gap: 1rem;
-      padding: 0 1.5rem; height: 3rem;
+      height: 2.5rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 1.25rem; gap: .625rem;
     }
-    .topbar__back {
-      display: flex; align-items: center; gap: .4rem;
-      font-size: var(--text-sm); color: var(--color-gray-500);
-      text-decoration: none; padding: .35rem .6rem;
-      border-radius: var(--rounded-sm);
-      transition: background .1s, color .1s;
+    .bar__back {
+      display: inline-flex; align-items: center; gap: .3rem;
+      color: var(--text-2); font-size: .8125rem; text-decoration: none;
+      padding: .25rem .5rem; border-radius: var(--radius);
+      transition: background .12s, color .12s;
     }
-    .topbar__back:hover { background: var(--color-gray-100); color: var(--color-gray-800); }
-    .topbar__back svg { width: 14px; height: 14px; }
-    .topbar__title { font-size: var(--text-sm); font-weight: 500; color: var(--color-gray-700); }
-    .topbar__file  { font-size: var(--text-xs); color: var(--color-gray-400); font-family: var(--font-mono); margin-left: auto; }
+    .bar__back:hover { background: var(--surface); color: var(--text); }
+    .bar__sep { color: var(--text-3); font-size: .75rem; }
+    .bar__crumb { font-size: .8125rem; color: var(--text-2); }
+    .bar__crumb strong { color: var(--text); font-weight: 500; }
+    .bar__right { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+    .bar__tag {
+      font-size: .6875rem; font-family: var(--mono);
+      color: var(--text-3); background: var(--surface);
+      padding: .2em .55em; border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
 
-    /* ── Page ── */
-    .page { min-height: calc(100vh - 3rem); display: flex; flex-direction: column; }
+    /* ── Layout ──────────────────────────────────────────────────────────────── */
+    .page { display: flex; flex-direction: column; min-height: calc(100vh - 2.5rem); }
 
-    /* ── Block ── */
-    .block { flex: 1; display: flex; flex-direction: column; padding: 1.5rem; gap: 1rem; }
+    .block {
+      flex: 1; display: flex; flex-direction: column;
+      gap: .75rem; padding: 1.25rem;
+    }
 
-    /* ── Comparateur ── */
+    /* ── Comparateur ─────────────────────────────────────────────────────────── */
     .cmp {
+      flex: 1; min-height: 0;
       position: relative; overflow: hidden;
       cursor: ew-resize; user-select: none; touch-action: none;
-      flex: 1; min-height: 0;
-      border-radius: var(--rounded);
-      background: var(--color-gray-900);
-      box-shadow: var(--shadow);
+      border-radius: var(--radius-lg);
+      background: #111;
+      border: 1px solid var(--border);
     }
     .cmp__img {
       position: absolute; inset: 0;
@@ -154,89 +215,98 @@ foreach ($testImages as $img) {
       z-index: 2;
       clip-path: inset(0 calc(100% - var(--split, 50%)) 0 0);
     }
-    .cmp__handle {
+    .cmp__divider {
       position: absolute; top: 0; bottom: 0;
-      left: var(--split, 50%);
-      transform: translateX(-50%);
-      width: 2px; background: rgba(255,255,255,.6);
+      left: var(--split, 50%); transform: translateX(-50%);
+      width: 1px; background: rgba(255,255,255,.35);
       z-index: 3; pointer-events: none;
     }
-    .cmp__handle::after {
+    .cmp__divider::after {
       content: '';
       position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 28px; height: 28px; border-radius: 50%;
-      background: var(--color-white);
-      box-shadow: 0 1px 6px rgba(0,0,0,.3);
+      width: 1.625rem; height: 1.625rem; border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 6px rgba(0,0,0,.4);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M7 5l-4 5 4 5M13 5l4 5-4 5'/%3E%3C/svg%3E");
-      background-size: 16px; background-position: center; background-repeat: no-repeat;
+      background-size: 14px; background-position: center; background-repeat: no-repeat;
     }
-    .cmp__tag {
-      position: absolute; top: .75rem; z-index: 4;
-      font-size: var(--text-xs); font-weight: 500;
-      padding: .25em .65em; border-radius: var(--rounded-sm);
+    .cmp__label {
+      position: absolute; top: .5rem; z-index: 4;
+      font-size: .6875rem; font-weight: 500; letter-spacing: .03em;
+      padding: .2em .5em; border-radius: var(--radius);
       pointer-events: none;
-      background: rgba(0,0,0,.5); backdrop-filter: blur(6px);
-      color: rgba(255,255,255,.8);
+      background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
+      color: rgba(255,255,255,.7);
     }
-    .cmp__tag--l { left: .75rem; }
-    .cmp__tag--r { right: .75rem; }
+    .cmp__label--l { left: .5rem; }
+    .cmp__label--r { right: .5rem; }
 
-    /* ── Meta ── */
+    /* ── Meta cards ──────────────────────────────────────────────────────────── */
     .meta { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
-    .meta__card {
-      background: var(--color-white); border-radius: var(--rounded);
-      box-shadow: var(--shadow); padding: .875rem 1rem;
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: .875rem 1rem;
     }
-    .meta__card-title {
-      font-size: var(--text-xs); font-weight: 600;
-      text-transform: uppercase; letter-spacing: .06em;
-      color: var(--color-gray-400); margin-bottom: .6rem;
+    .card__title {
+      font-size: .6875rem; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--text-3);
+      margin-bottom: .65rem; padding-bottom: .5rem;
+      border-bottom: 1px solid var(--border);
     }
-    .meta__rows { display: flex; flex-direction: column; gap: .3rem; }
-    .meta__row { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); }
-    .meta__key { color: var(--color-gray-500); }
-    .meta__val { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-gray-700); }
+    .card__rows { display: flex; flex-direction: column; gap: .4rem; }
+    .card__row { display: flex; justify-content: space-between; align-items: center; font-size: .8125rem; }
+    .card__key { color: var(--text-2); }
+    .card__val { font-family: var(--mono); font-size: .75rem; color: var(--text); }
+
+    /* ── Badges (exact Kirby theme system) ───────────────────────────────────── */
     .badge {
-      display: inline-flex; align-items: center; gap: .25em;
-      padding: .2em .55em; border-radius: var(--rounded-sm);
-      font-size: var(--text-xs); font-weight: 500;
+      display: inline-flex; align-items: center; gap: .3em;
+      padding: .2em .55em; border-radius: var(--radius);
+      font-size: .6875rem; font-weight: 500; font-family: var(--mono);
     }
-    .badge::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
-    .badge--ok  { background: var(--color-green-100); color: var(--color-green-400); }
-    .badge--ok::before { background: var(--color-green-400); }
-    .badge--ko  { background: var(--color-red-100);   color: var(--color-red-400); }
-    .badge--ko::before { background: var(--color-red-400); }
-
-    /* ── No thumb warning ── */
-    .no-thumb {
-      background: var(--color-white); border-radius: var(--rounded);
-      box-shadow: var(--shadow); padding: 1.5rem;
-      font-size: var(--text-sm); color: var(--color-gray-500);
-      text-align: center;
+    .badge::before {
+      content: ''; width: 5px; height: 5px; border-radius: 50%; display: inline-block;
     }
-    .no-thumb code { font-family: var(--font-mono); color: var(--color-gray-600); }
+    .badge--ok  { background: var(--green-dim); color: var(--green); }
+    .badge--ok::before  { background: var(--green); }
+    .badge--ko  { background: var(--red-dim);   color: var(--red); }
+    .badge--ko::before  { background: var(--red); }
 
-    hr { border: none; border-top: 1px solid var(--color-gray-200); }
+    /* ── Notice ──────────────────────────────────────────────────────────────── */
+    .notice {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 1.25rem;
+      font-size: .8125rem; color: var(--text-2); text-align: center;
+    }
+    .notice code { font-family: var(--mono); color: var(--text); }
 
+    /* ── Empty ───────────────────────────────────────────────────────────────── */
     .empty {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: .75rem; color: var(--color-gray-400);
-      font-size: var(--text-sm); padding: 4rem; text-align: center;
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: .8125rem; color: var(--text-3); padding: 4rem; text-align: center;
     }
+
+    hr { border: none; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
 
-<div class="topbar">
-  <a class="topbar__back" href="javascript:history.back()">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 3L5 8l5 5"/></svg>
+<div class="bar">
+  <a class="bar__back" href="javascript:history.back()">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 3L5 8l5 5"/></svg>
     Retour
   </a>
-  <span class="topbar__title">ICC Profile Test</span>
+  <span class="bar__sep">/</span>
+  <span class="bar__crumb">ICC Profile Test</span>
   <?php if (!empty($items)): ?>
-    <span class="topbar__file"><?= htmlspecialchars($items[0]['label']) ?><?php if ($items[0]['page']): ?> — <?= htmlspecialchars($items[0]['page']) ?><?php endif ?></span>
+  <div class="bar__right">
+    <span class="bar__tag"><?= htmlspecialchars($items[0]['label']) ?><?= $items[0]['page'] ? ' — ' . htmlspecialchars($items[0]['page']) : '' ?></span>
+  </div>
   <?php endif ?>
 </div>
 
@@ -244,71 +314,69 @@ foreach ($testImages as $img) {
 
 <?php if (empty($items)): ?>
   <div class="empty">
-    <p>Aucune image — ouvre depuis le panel ou dépose des JPG dans <code>content/test-icc/</code>.</p>
+    Aucune image — ouvre depuis le panel ou dépose des JPG dans <code>content/test-icc/</code>
   </div>
 
 <?php else: ?>
   <?php foreach ($items as $i => $item): ?>
     <?php if ($i > 0): ?><hr><?php endif ?>
-
     <div class="block">
 
-      <?php if (!$item['hasThumb']): ?>
-        <div class="no-thumb">
-          Aucun thumb trouvé pour <code><?= htmlspecialchars($item['label']) ?></code> — upload l'image depuis le panel pour le générer.
-        </div>
-      <?php else: ?>
-
-        <div class="cmp" id="cmp-<?= $i ?>" style="--split: 50%">
+      <?php if ($item['hasThumb']): ?>
+        <div class="cmp" id="cmp-<?= $i ?>" style="--split:50%">
           <img class="cmp__img" src="<?= $item['urlThumb'] ?>" alt="" loading="eager">
           <img class="cmp__img cmp__left" src="<?= $item['urlOrig'] ?>" alt="" loading="eager">
-          <div class="cmp__handle"></div>
-          <span class="cmp__tag cmp__tag--l">Original</span>
-          <span class="cmp__tag cmp__tag--r"><?= $item['thumbFormat'] ?> <?= $item['thumbSize'] ?>px</span>
+          <div class="cmp__divider"></div>
+          <span class="cmp__label cmp__label--l">Original <?= $item['ext'] ?></span>
+          <span class="cmp__label cmp__label--r"><?= $item['thumbFormat'] ?> <?= $item['thumbSize'] ?>px</span>
         </div>
-
+      <?php else: ?>
+        <div class="notice">
+          Aucun thumb trouvé pour <code><?= htmlspecialchars($item['label']) ?></code> — uploade l'image depuis le panel.
+        </div>
       <?php endif ?>
 
       <div class="meta">
-        <div class="meta__card">
-          <div class="meta__card-title">Original — <?= strtoupper(pathinfo($item['label'], PATHINFO_EXTENSION)) ?></div>
-          <div class="meta__rows">
-            <div class="meta__row">
-              <span class="meta__key">Taille fichier</span>
-              <span class="meta__val"><?= $item['sizeOrig'] ?></span>
+
+        <div class="card">
+          <div class="card__title">Original — <?= $item['ext'] ?></div>
+          <div class="card__rows">
+            <div class="card__row">
+              <span class="card__key">Taille</span>
+              <span class="card__val"><?= $item['sizeOrig'] ?></span>
             </div>
-            <div class="meta__row">
-              <span class="meta__key">Colorspace</span>
-              <span class="meta__val"><?= $item['infoOrig']['colorspace'] ?></span>
+            <div class="card__row">
+              <span class="card__key">Colorspace</span>
+              <span class="card__val"><?= $item['infoOrig']['colorspace'] ?></span>
             </div>
-            <div class="meta__row">
-              <span class="meta__key">Profil ICC</span>
+            <div class="card__row">
+              <span class="card__key">Profil ICC</span>
               <?php $ok = $item['infoOrig']['icc'] !== 'absent'; ?>
               <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? $item['infoOrig']['icc'] : 'absent' ?></span>
             </div>
           </div>
         </div>
 
-        <div class="meta__card">
-          <div class="meta__card-title">Thumb — <?= $item['hasThumb'] ? $item['thumbFormat'] . ' ' . $item['thumbSize'] . 'px' : 'non généré' ?></div>
-          <div class="meta__rows">
-            <div class="meta__row">
-              <span class="meta__key">Taille fichier</span>
-              <span class="meta__val"><?= $item['sizeThumb'] ?></span>
+        <div class="card">
+          <div class="card__title">Thumb — <?= $item['hasThumb'] ? $item['thumbFormat'] . ' ' . $item['thumbSize'] . 'px' : 'non généré' ?></div>
+          <div class="card__rows">
+            <div class="card__row">
+              <span class="card__key">Taille</span>
+              <span class="card__val"><?= $item['sizeThumb'] ?></span>
             </div>
-            <div class="meta__row">
-              <span class="meta__key">Colorspace</span>
-              <span class="meta__val"><?= $item['infoThumb']['colorspace'] ?></span>
+            <div class="card__row">
+              <span class="card__key">Colorspace</span>
+              <span class="card__val"><?= $item['infoThumb']['colorspace'] ?></span>
             </div>
-            <div class="meta__row">
-              <span class="meta__key">Profil ICC</span>
+            <div class="card__row">
+              <span class="card__key">Profil ICC</span>
               <?php $ok = $item['infoThumb']['icc'] !== 'absent'; ?>
               <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? $item['infoThumb']['icc'] : 'absent' ?></span>
             </div>
           </div>
         </div>
-      </div>
 
+      </div>
     </div>
   <?php endforeach ?>
 <?php endif ?>
@@ -319,9 +387,9 @@ foreach ($testImages as $img) {
 document.querySelectorAll('.cmp').forEach(cmp => {
   let active = false;
   function update(x) {
-    const r   = cmp.getBoundingClientRect();
-    const pct = Math.max(2, Math.min(98, (x - r.left) / r.width * 100));
-    cmp.style.setProperty('--split', pct + '%');
+    const r = cmp.getBoundingClientRect();
+    const p = Math.max(2, Math.min(98, (x - r.left) / r.width * 100));
+    cmp.style.setProperty('--split', p + '%');
   }
   cmp.addEventListener('mousedown',  e => { active = true; update(e.clientX); });
   cmp.addEventListener('touchstart', e => { active = true; update(e.touches[0].clientX); }, { passive: true });
