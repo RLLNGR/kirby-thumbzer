@@ -13,7 +13,6 @@ panel.plugin("rllngr/kirby-thumbzer", {
           <a
             v-if="link"
             :href="link"
-            target="_blank"
             style="
               display: inline-flex;
               align-items: center;

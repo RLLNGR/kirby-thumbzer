@@ -117,9 +117,19 @@ content/
 
 They are served through a Kirby route (`content/*/thumbs/*`) — no `.htaccess` modifications needed.
 
+## Regenerate all thumbnails
+
+To regenerate thumbnails for the entire site without going through the panel:
+
+```
+GET /thumbzer/regenerate
+```
+
+Returns a JSON summary: `{ "generated": 12, "skipped": 48, "errors": [] }`.
+
 ## ICC Comparison Tool
 
-The plugin ships a built-in test page to visually compare the original file against WebP with and without ICC profile preservation.
+The plugin ships a built-in page to visually compare the original file against its generated WebP thumbnail — with live ICC profile metadata loaded asynchronously.
 
 ### Setup
 
@@ -133,27 +143,34 @@ Title: Test ICC
 Uuid: test-icc-page
 ```
 
-Then open `yourdomain.com/test-icc` — you can drop images directly into the `content/test-icc/` folder to test them.
+Then open `yourdomain.com/test-icc`. You can also drop JPGs directly into `content/test-icc/` to test them.
 
 ### Panel button
 
-Add `thumbzer-icc-button` to any file blueprint to get a one-click link to the comparison tool:
+Add `thumbzer-icc-button` to any file blueprint to get a one-click link from the panel to the comparison tool:
 
 ```yaml
 # site/blueprints/files/default.yml
 sections:
   icc:
     type: thumbzer-icc-button
+  meta:
+    type: fields
+    fields:
+      alt:
+        label: Alt text
+        type: text
 ```
 
-Clicking the button in the panel opens the comparison tool pre-loaded with that specific image.
+Clicking the button opens the comparison tool pre-loaded with that specific image, in the same tab.
 
 ### Comparison interface
 
-- **Left side** — original JPG (resized to the same dimensions)
-- **Right side** — WebP, switchable between `-strip` (ICC removed) and `+ICC` (profile preserved)
+- **Left side** — original file
+- **Right side** — generated WebP thumbnail
 - Drag the handle to reveal either side
-- Metadata below shows file size, colorspace, and whether the ICC profile is present
+- Metadata cards show file size, colorspace, and ICC profile presence (loaded async — no delay on page open)
+- The page adapts to light and dark mode, matching the Kirby panel appearance
 
 ## License
 
