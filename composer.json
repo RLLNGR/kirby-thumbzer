@@ -12,6 +12,11 @@
             "role": "Developer"
         }
     ],
+    "homepage": "https://github.com/RLLNGR/kirby-thumbzer",
+    "support": {
+        "source": "https://github.com/RLLNGR/kirby-thumbzer",
+        "issues": "https://github.com/RLLNGR/kirby-thumbzer/issues"
+    },
     "require": {
         "php": ">=8.0",
         "getkirby/composer-installer": "^1.2"
