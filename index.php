@@ -93,7 +93,16 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
             'action'  => function () {
                 set_time_limit(0);
 
-                $results = ['generated' => 0, 'skipped' => 0, 'errors' => []];
+                // Stream output line by line to keep the FastCGI connection alive
+                // (avoids idle timeout when processing hundreds of images)
+                header('Content-Type: text/plain; charset=utf-8');
+                header('X-Accel-Buffering: no');
+                header('Cache-Control: no-cache');
+                while (ob_get_level() > 0) ob_end_flush();
+
+                $generated = 0;
+                $skipped   = 0;
+                $errors    = [];
 
                 $pages = kirby()->site()->index()->filterBy('slug', '!=', 'thumbs');
 
@@ -104,16 +113,27 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
                         try {
                             $before = ThumbGenerator::countExisting($file);
                             ThumbGenerator::generate($file);
-                            $after = ThumbGenerator::countExisting($file);
-                            $results['generated'] += ($after - $before);
-                            $results['skipped']   += $before;
+                            $after  = ThumbGenerator::countExisting($file);
+                            $new    = $after - $before;
+                            $generated += $new;
+                            $skipped   += $before;
+
+                            echo ($new > 0 ? '✓' : '–') . ' ' . $file->id() . PHP_EOL;
                         } catch (\Exception $e) {
-                            $results['errors'][] = $file->id() . ': ' . $e->getMessage();
+                            $errors[] = $file->id() . ': ' . $e->getMessage();
+                            echo '✗ ' . $file->id() . ': ' . $e->getMessage() . PHP_EOL;
                         }
+
+                        flush();
                     }
                 }
 
-                return \Kirby\Http\Response::json($results);
+                echo PHP_EOL . json_encode([
+                    'generated' => $generated,
+                    'skipped'   => $skipped,
+                    'errors'    => $errors,
+                ], JSON_PRETTY_PRINT) . PHP_EOL;
+                exit;
             }
         ],
         [
