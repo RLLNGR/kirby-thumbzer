@@ -100,6 +100,12 @@ class ThumbGenerator
             mkdir($dir, 0755, true);
         }
 
+        // Ensure thumbs/ is a proper Kirby page (needed for panel navigation)
+        $contentFile = $dir . '/thumbnails.txt';
+        if (!file_exists($contentFile)) {
+            file_put_contents($contentFile, "Title: Thumbnails\n\n----\n\nUuid: " . \Kirby\Toolkit\Str::uuid() . "\n");
+        }
+
         $format      = static::format();
         $quality     = static::quality();
         $preserveICC = static::preserveICC();
