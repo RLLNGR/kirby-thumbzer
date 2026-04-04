@@ -299,7 +299,7 @@ foreach ($testImages as $img) {
 <body>
 
 <div class="bar">
-  <a class="bar__back" href="javascript:history.back()">
+  <a class="bar__back" href="#" onclick="window.close(); return false;">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 3L5 8l5 5"/></svg>
     Retour
   </a>
