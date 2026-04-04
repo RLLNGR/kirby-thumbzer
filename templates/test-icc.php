@@ -15,16 +15,6 @@ if ($fileId = get('file')) {
     $testImages = $page->images()->filterBy('extension', 'in', ['jpg', 'jpeg'])->toArray(fn($img) => $img);
 }
 
-$identify = str_replace('convert', 'identify', kirby()->option('thumbs.bin', 'convert'));
-
-function icc_profileInfo(string $identify, string $file): array
-{
-    if (!file_exists($file)) return ['colorspace' => '—', 'icc' => 'absent'];
-    $colorspace = trim(shell_exec("{$identify} -format '%[colorspace]' " . escapeshellarg($file) . " 2>/dev/null") ?? '—');
-    $icc = trim(shell_exec("{$identify} -verbose " . escapeshellarg($file) . " 2>/dev/null | grep -i 'Profile-icc' | awk '{print $2}'") ?? '');
-    return ['colorspace' => $colorspace ?: '—', 'icc' => $icc ? $icc . 'B' : 'absent'];
-}
-
 function icc_fileKb(string $path): string
 {
     return file_exists($path) ? round(filesize($path) / 1024) . ' KB' : '—';
@@ -53,13 +43,12 @@ foreach ($testImages as $img) {
         'page'        => $img->page()->title()->value(),
         'urlOrig'     => $img->url(),
         'urlThumb'    => $thumbUrl,
-        'rootThumb'   => $thumbPath,
+        'pathOrig'    => $img->root(),
+        'pathThumb'   => $thumbPath,
         'thumbSize'   => $thumbSize,
         'thumbFormat' => strtoupper($format),
         'sizeOrig'    => icc_fileKb($img->root()),
         'sizeThumb'   => $thumbPath ? icc_fileKb($thumbPath) : '—',
-        'infoOrig'    => icc_profileInfo($identify, $img->root()),
-        'infoThumb'   => $thumbPath ? icc_profileInfo($identify, $thumbPath) : ['colorspace' => '—', 'icc' => 'absent'],
         'hasThumb'    => $thumbPath !== null,
         'ext'         => strtoupper(pathinfo($img->filename(), PATHINFO_EXTENSION)),
     ];
@@ -263,6 +252,19 @@ foreach ($testImages as $img) {
     .card__key { color: var(--text-2); }
     .card__val { font-family: var(--mono); font-size: .75rem; color: var(--text); }
 
+    /* ── Skeleton loader ─────────────────────────────────────────────────────── */
+    .skel {
+      display: inline-block;
+      width: 4rem; height: .75em; border-radius: var(--radius);
+      background: var(--border);
+      animation: pulse 1.4s ease-in-out infinite;
+      vertical-align: middle;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .4; }
+    }
+
     /* ── Badges (exact Kirby theme system) ───────────────────────────────────── */
     .badge {
       display: inline-flex; align-items: center; gap: .3em;
@@ -338,7 +340,7 @@ foreach ($testImages as $img) {
 
       <div class="meta">
 
-        <div class="card">
+        <div class="card" data-icc-path="<?= htmlspecialchars($item['pathOrig']) ?>">
           <div class="card__title">Original — <?= $item['ext'] ?></div>
           <div class="card__rows">
             <div class="card__row">
@@ -347,17 +349,16 @@ foreach ($testImages as $img) {
             </div>
             <div class="card__row">
               <span class="card__key">Colorspace</span>
-              <span class="card__val"><?= $item['infoOrig']['colorspace'] ?></span>
+              <span class="card__val" data-icc-cs><span class="skel"></span></span>
             </div>
             <div class="card__row">
               <span class="card__key">Profil ICC</span>
-              <?php $ok = $item['infoOrig']['icc'] !== 'absent'; ?>
-              <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? $item['infoOrig']['icc'] : 'absent' ?></span>
+              <span data-icc-badge><span class="skel"></span></span>
             </div>
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" data-icc-path="<?= $item['pathThumb'] ? htmlspecialchars($item['pathThumb']) : '' ?>">
           <div class="card__title">Thumb — <?= $item['hasThumb'] ? $item['thumbFormat'] . ' ' . $item['thumbSize'] . 'px' : 'non généré' ?></div>
           <div class="card__rows">
             <div class="card__row">
@@ -366,12 +367,11 @@ foreach ($testImages as $img) {
             </div>
             <div class="card__row">
               <span class="card__key">Colorspace</span>
-              <span class="card__val"><?= $item['infoThumb']['colorspace'] ?></span>
+              <span class="card__val" data-icc-cs><?php if ($item['hasThumb']): ?><span class="skel"></span><?php else: ?>—<?php endif ?></span>
             </div>
             <div class="card__row">
               <span class="card__key">Profil ICC</span>
-              <?php $ok = $item['infoThumb']['icc'] !== 'absent'; ?>
-              <span class="badge <?= $ok ? 'badge--ok' : 'badge--ko' ?>"><?= $ok ? $item['infoThumb']['icc'] : 'absent' ?></span>
+              <span data-icc-badge><?php if ($item['hasThumb']): ?><span class="skel"></span><?php else: ?>—<?php endif ?></span>
             </div>
           </div>
         </div>
@@ -384,6 +384,7 @@ foreach ($testImages as $img) {
 </div>
 
 <script>
+// ── Slider ────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.cmp').forEach(cmp => {
   let active = false;
   function update(x) {
@@ -397,6 +398,30 @@ document.querySelectorAll('.cmp').forEach(cmp => {
   window.addEventListener('touchmove',  e => { if (active) update(e.touches[0].clientX); }, { passive: true });
   window.addEventListener('mouseup',  () => active = false);
   window.addEventListener('touchend', () => active = false);
+});
+
+// ── ICC info async ────────────────────────────────────────────────────────────
+function renderBadge(icc) {
+  const ok = icc !== 'absent';
+  return `<span class="badge ${ok ? 'badge--ok' : 'badge--ko'}">${ok ? icc : 'absent'}</span>`;
+}
+
+document.querySelectorAll('.card[data-icc-path]').forEach(async card => {
+  const path = card.dataset.iccPath;
+  if (!path) return;
+
+  try {
+    const res  = await fetch(`<?= kirby()->url() ?>/thumbzer/icc-info?path=${encodeURIComponent(path)}`);
+    const data = await res.json();
+
+    const csEl    = card.querySelector('[data-icc-cs]');
+    const badgeEl = card.querySelector('[data-icc-badge]');
+
+    if (csEl)    csEl.textContent    = data.colorspace;
+    if (badgeEl) badgeEl.innerHTML   = renderBadge(data.icc);
+  } catch (e) {
+    card.querySelectorAll('.skel').forEach(s => s.textContent = '—');
+  }
 });
 </script>
 </body>

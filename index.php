@@ -65,6 +65,27 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
 
     'routes' => [
         [
+            // ICC profile info for a single file path (called async by the test-icc template)
+            // GET /thumbzer/icc-info?path=/absolute/path/to/file.jpg
+            'pattern' => 'thumbzer/icc-info',
+            'action'  => function () {
+                $path     = get('path');
+                $identify = str_replace('convert', 'identify', kirby()->option('thumbs.bin', 'convert'));
+
+                if (!$path || !file_exists($path)) {
+                    return \Kirby\Http\Response::json(['colorspace' => '—', 'icc' => 'absent']);
+                }
+
+                $colorspace = trim(shell_exec("{$identify} -format '%[colorspace]' " . escapeshellarg($path) . " 2>/dev/null") ?? '—');
+                $icc        = trim(shell_exec("{$identify} -verbose " . escapeshellarg($path) . " 2>/dev/null | grep -i 'Profile-icc' | awk '{print $2}'") ?? '');
+
+                return \Kirby\Http\Response::json([
+                    'colorspace' => $colorspace ?: '—',
+                    'icc'        => $icc ? $icc . 'B' : 'absent',
+                ]);
+            }
+        ],
+        [
             // Regenerate all thumbs for all listed pages
             // GET /thumbzer/regenerate
             'pattern' => 'thumbzer/regenerate',
