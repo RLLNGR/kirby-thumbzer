@@ -1,0 +1,23 @@
+label: Thumbnails
+icon: images
+
+sections:
+
+  files:
+    headline: Fichiers source
+    type: files
+    layout: cards
+    size: tiny
+    uploads:
+      template: image
+
+  thumbs:
+    headline: Images optimisées
+    type: pages
+    template: thumbnails
+    status: unlisted
+    layout: cards
+    image:
+      query: page.cover
+      cover: true
+      ratio: 16/9

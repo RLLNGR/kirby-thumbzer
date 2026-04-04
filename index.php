@@ -37,7 +37,8 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
     // ── Blueprints ────────────────────────────────────────────────────────────
 
     'blueprints' => [
-        'pages/test-icc' => __DIR__ . '/blueprints/pages/test-icc.yml',
+        'pages/test-icc'          => __DIR__ . '/blueprints/pages/test-icc.yml',
+        'tabs/thumbzer-thumbnails' => __DIR__ . '/blueprints/tabs/thumbzer-thumbnails.yml',
     ],
 
     // ── Panel section: ICC test button ────────────────────────────────────────

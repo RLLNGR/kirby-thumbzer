@@ -117,15 +117,35 @@ content/
 
 They are served through a Kirby route (`content/*/thumbs/*`) — no `.htaccess` modifications needed.
 
+## Thumbnails tab (optional)
+
+The plugin registers a ready-to-use panel tab blueprint under `tabs/thumbzer-thumbnails`. Add it to any page blueprint to get a dedicated tab showing source files and generated thumbnails:
+
+```yaml
+# site/blueprints/pages/project.yml
+tabs:
+  content:   tabs/my-content-tab
+  thumbnails: tabs/thumbzer-thumbnails
+  seo:       seo/page
+```
+
+The tab has two sections:
+- **Fichiers source** — uploaded images (with the ICC button)
+- **Images optimisées** — the `thumbs` sub-page cards showing generated thumbnails
+
+The `thumbs/` sub-page and its `thumbnails.txt` content file are created automatically the first time an image is uploaded to the page. The panel tab will appear as soon as the page has at least one image.
+
 ## Regenerate all thumbnails
 
-To regenerate thumbnails for the entire site without going through the panel:
+To regenerate thumbnails for the entire site — including draft and unlisted pages — without going through the panel:
 
 ```
 GET /thumbzer/regenerate
 ```
 
 Returns a JSON summary: `{ "generated": 12, "skipped": 48, "errors": [] }`.
+
+This route also creates any missing `thumbs/thumbnails.txt` files, so running it once on an existing project is enough to bring all pages up to date.
 
 ## ICC Comparison Tool
 
