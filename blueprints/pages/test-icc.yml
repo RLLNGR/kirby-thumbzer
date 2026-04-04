@@ -1,8 +1,17 @@
 title: Test ICC
 icon: 🧪
 
-options:
-  changeStatus: true
-  delete: true
-  preview: true
+status:
+  unlisted: true
+  listed: false
+  draft: false
 
+options:
+  changeStatus: false
+  changeSlug: false
+  changeTitle: false
+  duplicate: false
+  move: false
+  sort: false
+  preview: true
+  delete: true

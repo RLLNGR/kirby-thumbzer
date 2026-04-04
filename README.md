@@ -131,9 +131,9 @@ Returns a JSON summary: `{ "generated": 12, "skipped": 48, "errors": [] }`.
 
 The plugin ships a built-in page to visually compare the original file against its generated WebP thumbnail — with live ICC profile metadata loaded asynchronously.
 
-### Setup
+### 1 — Create the content page
 
-Create the page in `content/test-icc/test-icc.txt`:
+Create `content/test-icc/test-icc.txt`:
 
 ```
 Title: Test ICC
@@ -141,36 +141,71 @@ Title: Test ICC
 ----
 
 Uuid: test-icc-page
+
+----
+
+Status: unlisted
 ```
 
-Then open `yourdomain.com/test-icc`. You can also drop JPGs directly into `content/test-icc/` to test them.
+The page will be accessible at `yourdomain.com/test-icc` but hidden from the panel navigation and not publicly listed.
 
-### Panel button
+### 2 — Create the file blueprint
 
-Add `thumbzer-icc-button` to any file blueprint to get a one-click link from the panel to the comparison tool:
+Create `site/blueprints/files/image.yml` — this is the blueprint used for all uploaded images. It includes the ICC button section:
 
 ```yaml
-# site/blueprints/files/default.yml
-sections:
-  icc:
-    type: thumbzer-icc-button
-  meta:
-    type: fields
-    fields:
-      alt:
-        label: Alt text
-        type: text
+# site/blueprints/files/image.yml
+columns:
+  - width: 1/2
+    sections:
+      content:
+        type: fields
+        fields:
+          legend:
+            label: Légende
+            type: textarea
+            size: medium
+  - width: 1/2
+    sections:
+      icc:
+        type: thumbzer-icc-button
+      meta:
+        type: fields
+        fields:
+          alt:
+            label: Alt text
+            type: text
 ```
 
-Clicking the button opens the comparison tool pre-loaded with that specific image, in the same tab.
+### 3 — Assign the template in page blueprints
+
+In every page blueprint that has a `type: files` section where images are uploaded, add `uploads: template: image` so Kirby associates uploaded images with the blueprint above:
+
+```yaml
+sections:
+  files:
+    type: files
+    uploads:
+      template: image
+```
+
+### 4 — Migrate existing files (first install only)
+
+If the project already has uploaded images without a template assigned, run this in the project root to update all image metadata files at once:
+
+```bash
+find content -name "*.jpg.txt" -o -name "*.jpeg.txt" | grep -v thumbs | while read f; do
+  grep -q "^Template:" "$f" || printf "\n----\n\nTemplate: image\n" >> "$f"
+done
+```
 
 ### Comparison interface
 
-- **Left side** — original file
-- **Right side** — generated WebP thumbnail
+- **Left** — original file, **Right** — generated WebP thumbnail
 - Drag the handle to reveal either side
 - Metadata cards show file size, colorspace, and ICC profile presence (loaded async — no delay on page open)
-- The page adapts to light and dark mode, matching the Kirby panel appearance
+- Adapts to light and dark mode, matching the Kirby panel appearance
+- Opens in the same tab — browser back button returns to the panel
 
 ## License
 
