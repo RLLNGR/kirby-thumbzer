@@ -110,6 +110,9 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
                     foreach ($page->files()->filterBy('type', 'image') as $file) {
                         if (in_array($file->extension(), ['gif', 'svg'])) continue;
 
+                        echo '→ ' . $file->id() . PHP_EOL;
+                        flush();
+
                         try {
                             $before = ThumbGenerator::countExisting($file);
                             ThumbGenerator::generate($file);
