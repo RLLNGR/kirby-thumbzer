@@ -115,9 +115,12 @@ class ThumbGenerator
             $dst = static::thumbPath($file, $width, $format);
             if (file_exists($dst)) continue;
 
-            if ($preserveICC) {
+            $disabled = array_map('trim', explode(',', \ini_get('disable_functions')));
+            $execEnabled = \function_exists('exec') && !in_array('exec', $disabled, true);
+
+            if ($preserveICC && $execEnabled) {
                 // Direct ImageMagick call — no -strip, ICC profile is preserved
-                exec(
+                \exec(
                     $bin . ' ' . escapeshellarg($file->root()) .
                     ' -resize ' . (int) $width . 'x' .
                     ' -quality ' . $quality .
