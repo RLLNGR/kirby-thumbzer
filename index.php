@@ -8,6 +8,14 @@ use Rllngr\Thumbzer\ThumbGenerator;
 
 @include_once __DIR__ . '/vendor/autoload.php';
 
+$runThumbTaskSafely = static function (callable $task, string $label): void {
+    try {
+        $task();
+    } catch (\Throwable $exception) {
+        error_log('[kirby-thumbzer] ' . $label . ': ' . $exception->getMessage());
+    }
+};
+
 Kirby::plugin('rllngr/kirby-thumbzer', [
 
     // ── Options ───────────────────────────────────────────────────────────────
@@ -142,10 +150,25 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
         [
             'pattern' => 'content/(:all)/thumbs/(:any)',
             'action'  => function (string $path, string $filename) {
-                $root = kirby()->root('content') . '/' . $path . '/thumbs/' . $filename;
+                $contentRoot = realpath(kirby()->root('content'));
+                $root        = realpath($contentRoot . '/' . $path . '/thumbs/' . $filename);
 
-                if (!file_exists($root)) {
-                    return false;
+                // a missing thumb must answer with a cheap 404, never with
+                // `return false`: Kirby turns an empty route result into a full
+                // render of the error page, so a gallery whose thumbs have not
+                // been generated yet would render the whole site once per
+                // <img srcset> entry (4 sizes x N images) instead of 404ing.
+                // keep the response contained in /content as well, since $path
+                // is attacker-controlled and may contain ../
+                if (
+                    $root === false ||
+                    $contentRoot === false ||
+                    str_starts_with($root, $contentRoot . '/') === false ||
+                    is_file($root) === false
+                ) {
+                    return new Response('', 'text/plain', 404, [
+                        'Cache-Control' => 'no-store',
+                    ]);
                 }
 
                 $ext   = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
@@ -171,25 +194,39 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
 
     'hooks' => [
 
-        'file.create:after' => function ($file) {
+        'file.create:after' => function ($file) use ($runThumbTaskSafely) {
             if ($file->page()->slug() === 'thumbs') return;
-            ThumbGenerator::generate($file);
+            $runThumbTaskSafely(
+                fn () => ThumbGenerator::generate($file),
+                'Failed to generate thumbnails for ' . $file->id()
+            );
         },
 
-        'file.replace:after' => function ($newFile, $oldFile) {
+        'file.replace:after' => function ($newFile, $oldFile) use ($runThumbTaskSafely) {
             if ($newFile->page()->slug() === 'thumbs') return;
-            ThumbGenerator::cleanup($oldFile);
-            ThumbGenerator::generate($newFile);
+            $runThumbTaskSafely(
+                function () use ($newFile, $oldFile): void {
+                    ThumbGenerator::cleanup($oldFile);
+                    ThumbGenerator::generate($newFile);
+                },
+                'Failed to replace thumbnails for ' . $newFile->id()
+            );
         },
 
-        'file.changeName:after' => function ($newFile, $oldFile) {
+        'file.changeName:after' => function ($newFile, $oldFile) use ($runThumbTaskSafely) {
             if ($newFile->page()->slug() === 'thumbs') return;
-            ThumbGenerator::rename($newFile, $oldFile);
+            $runThumbTaskSafely(
+                fn () => ThumbGenerator::rename($newFile, $oldFile),
+                'Failed to rename thumbnails for ' . $newFile->id()
+            );
         },
 
-        'file.delete:after' => function ($bool, $file) {
+        'file.delete:after' => function ($bool, $file) use ($runThumbTaskSafely) {
             if ($file->page()->slug() === 'thumbs') return;
-            ThumbGenerator::cleanup($file);
+            $runThumbTaskSafely(
+                fn () => ThumbGenerator::cleanup($file),
+                'Failed to cleanup thumbnails for ' . $file->id()
+            );
         },
 
     ],
