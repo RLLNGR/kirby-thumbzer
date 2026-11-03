@@ -8,7 +8,7 @@
  * Variables:
  *   $image      Kirby\Cms\File   required  The image (or video) file object
  *   $sizes      string|array               CSS sizes attribute  e.g. '100vw' or '(min-width: 992px) 50vw, 100vw'
- *   $alt        string                     Alt text prefix — appended with the file's own alt field
+ *   $alt        string                     Fallback alt text, used when the file has none
  *   $class      string                     CSS class (defaults to $image->orientation())
  *   $breakpoint string                     Largest size key to include (defaults to 'extra-large')
  *   $lazy       bool                       Native lazy loading (defaults to true)
@@ -19,7 +19,8 @@ use Rllngr\Thumbzer\ThumbGenerator;
 if (!$image) return;
 
 $class     = $class ?? $image->orientation();
-$imageAlt  = trim(($alt ?? '') . ' ' . $image->alt()->value());
+// kirby-visibilizer's altText(): the alt field, else its generated text
+$imageAlt  = trim($image->hasMethod('altText') ? $image->altText()->value() : $image->alt()->value()) ?: trim((string) ($alt ?? ''));
 $lazy      = $lazy ?? true;
 $breakpoint = $breakpoint ?? 'extra-large';
 $sizeAttr  = is_array($sizes ?? null) ? implode(', ', $sizes) : ($sizes ?? '');
@@ -45,7 +46,7 @@ if ($isDraft || in_array($image->extension(), ['gif', 'svg'])):
 <img
     class="<?= $class ?>"
     src="<?= $image->url() ?>"
-    alt="<?= $imageAlt ?>"
+    alt="<?= esc($imageAlt) ?>"
     <?php if ($lazy): ?>loading="lazy"<?php endif ?>
 >
 <?php return; endif;
@@ -82,7 +83,7 @@ endforeach;
         srcset="<?= implode(', ', $srcsets['main']) ?>"
         src="<?= $image->url() ?>"
         class="<?= $class ?>"
-        alt="<?= $imageAlt ?>"
+        alt="<?= esc($imageAlt) ?>"
         width="<?= $image->width() ?>"
         height="<?= $image->height() ?>"
         <?php if ($lazy): ?>loading="lazy" decoding="async"<?php endif ?>

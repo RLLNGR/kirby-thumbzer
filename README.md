@@ -90,7 +90,7 @@ Then **remove** the `file.create:after`, `file.replace:after`, `file.changeName:
     'image'      => $image,         // Kirby File object — required
     'sizes'      => '100vw',        // CSS sizes attribute
     'breakpoint' => 'large',        // Max size key to include (default: extra-large)
-    'alt'        => 'My caption',   // Alt text prefix (appended with the file's alt field)
+    'alt'        => 'My caption',   // Fallback alt text, when the file has none (kirby-visibilizer's altText() first)
     'lazy'       => true,           // Native lazy loading (default: true)
 ]) ?>
 ```
