@@ -16,6 +16,9 @@ $runThumbTaskSafely = static function (callable $task, string $label): void {
     }
 };
 
+// Thumbs live in the page's folder: site and user files, and the thumbs themselves, are skipped
+$skipFile = static fn ($file): bool => $file->page() === null || $file->page()->slug() === 'thumbs';
+
 Kirby::plugin('rllngr/kirby-thumbzer', [
 
     // ── Options ───────────────────────────────────────────────────────────────
@@ -194,16 +197,16 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
 
     'hooks' => [
 
-        'file.create:after' => function ($file) use ($runThumbTaskSafely) {
-            if ($file->page()->slug() === 'thumbs') return;
+        'file.create:after' => function ($file) use ($runThumbTaskSafely, $skipFile) {
+            if ($skipFile($file)) return;
             $runThumbTaskSafely(
                 fn () => ThumbGenerator::generate($file),
                 'Failed to generate thumbnails for ' . $file->id()
             );
         },
 
-        'file.replace:after' => function ($newFile, $oldFile) use ($runThumbTaskSafely) {
-            if ($newFile->page()->slug() === 'thumbs') return;
+        'file.replace:after' => function ($newFile, $oldFile) use ($runThumbTaskSafely, $skipFile) {
+            if ($skipFile($newFile)) return;
             $runThumbTaskSafely(
                 function () use ($newFile, $oldFile): void {
                     ThumbGenerator::cleanup($oldFile);
@@ -213,16 +216,16 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
             );
         },
 
-        'file.changeName:after' => function ($newFile, $oldFile) use ($runThumbTaskSafely) {
-            if ($newFile->page()->slug() === 'thumbs') return;
+        'file.changeName:after' => function ($newFile, $oldFile) use ($runThumbTaskSafely, $skipFile) {
+            if ($skipFile($newFile)) return;
             $runThumbTaskSafely(
                 fn () => ThumbGenerator::rename($newFile, $oldFile),
                 'Failed to rename thumbnails for ' . $newFile->id()
             );
         },
 
-        'file.delete:after' => function ($bool, $file) use ($runThumbTaskSafely) {
-            if ($file->page()->slug() === 'thumbs') return;
+        'file.delete:after' => function ($bool, $file) use ($runThumbTaskSafely, $skipFile) {
+            if ($skipFile($file)) return;
             $runThumbTaskSafely(
                 fn () => ThumbGenerator::cleanup($file),
                 'Failed to cleanup thumbnails for ' . $file->id()
