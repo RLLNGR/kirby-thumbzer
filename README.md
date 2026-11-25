@@ -14,7 +14,7 @@ A Kirby CMS plugin that pre-generates thumbnails on file upload and renders resp
 
 ## Requirements
 
-- Kirby 4+
+- Kirby 4, 5 or 6
 - PHP 8.1+
 - ImageMagick (`convert`) — required for ICC preservation, optional otherwise (falls back to Kirby's GD driver)
 
