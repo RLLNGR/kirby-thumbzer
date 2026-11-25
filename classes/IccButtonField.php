@@ -19,7 +19,7 @@ class IccButtonField extends DisplayField
     {
         return [
             ...parent::props(),
-            'link' => $this->model()->kirby()->url() . '/test-icc?file=' . $this->model()->id(),
+            'link' => $this->model()->kirby()->url() . '/test-icc?file=' . rawurlencode($this->model()->id()),
         ];
     }
 }

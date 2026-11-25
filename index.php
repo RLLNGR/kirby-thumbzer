@@ -72,7 +72,7 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
         'thumbzer-icc-button' => [
             'computed' => [
                 'link' => function () {
-                    return kirby()->url() . '/test-icc?file=' . $this->model()->id();
+                    return kirby()->url() . '/test-icc?file=' . rawurlencode($this->model()->id());
                 }
             ]
         ]

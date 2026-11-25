@@ -13,8 +13,12 @@ const iccButton = {
   },
   async created() {
     if (this.link || typeof this.load !== "function") return;
-    const data = await this.load();
-    this.loaded = data.link;
+    try {
+      const data = await this.load();
+      this.loaded = data?.link ?? null;
+    } catch (e) {
+      this.loaded = null;
+    }
   },
   template: `
     <div style="padding-top: 0.5rem">
