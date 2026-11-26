@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 use Kirby\Cms\App as Kirby;
 use Kirby\Http\Response;
+use Rllngr\Thumbzer\Access;
 use Rllngr\Thumbzer\ThumbGenerator;
 
 @include_once __DIR__ . '/vendor/autoload.php';
+
+// Composer autoloads these; this covers manual installs
+load([
+    'Rllngr\\Thumbzer\\Access'         => 'classes/Access.php',
+    'Rllngr\\Thumbzer\\ThumbGenerator' => 'classes/ThumbGenerator.php',
+], __DIR__);
 
 $runThumbTaskSafely = static function (callable $task, string $label): void {
     try {
@@ -32,6 +39,21 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
     //   'thumbnails.preserveICC' => false,   // true for photography projects (Adobe RGB / ProPhoto)
     //
     // The plugin reads legacy define('THUMB_ROOT', '...') constants as a fallback for prefix.
+
+    // ── Permissions ───────────────────────────────────────────────────────────
+    //
+    // Admins always have them. Other Panel users get these defaults, which
+    // their user blueprint can override (site/blueprints/users/editor.yml):
+    //
+    //   permissions:
+    //     rllngr.kirby-thumbzer:
+    //       regenerate: true
+    //       icc: false
+
+    'permissions' => [
+        'icc'        => true,   // ICC tool: test-icc page, thumbzer/icc-info, Panel button
+        'regenerate' => false,  // thumbzer/regenerate
+    ],
 
     // ── Snippets ──────────────────────────────────────────────────────────────
 
@@ -64,51 +86,100 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
         'thumbzer-icc-button' => [
             'computed' => [
                 'link' => function () {
+                    // no button for roles without the icc permission
+                    if (Access::can('icc') === false) {
+                        return null;
+                    }
+
                     return kirby()->url() . '/test-icc?file=' . $this->model()->id();
                 }
             ]
         ]
     ],
 
-    // ── Routes: serve thumb files from /content/ ──────────────────────────────
+    // ── Routes ────────────────────────────────────────────────────────────────
     //
-    // Kirby's .htaccess blocks direct access to /content/*.
-    // This route serves thumb files through Kirby with proper cache headers.
+    // The two thumbzer/* maintenance routes answer 403 unless the visitor is
+    // logged in to the Panel with the matching permission (see above).
+    //
+    // Kirby's .htaccess blocks direct access to /content/*: the last route
+    // serves thumb files through Kirby with proper cache headers (the thumbs
+    // of draft pages only with a signed URL or to users logged in to the Panel).
 
     'routes' => [
         [
-            // ICC profile info for a single file path (called async by the test-icc template)
-            // GET /thumbzer/icc-info?path=/absolute/path/to/file.jpg
+            // ICC profile info of an image or of one of its thumbs (called async by the test-icc template)
+            // GET /thumbzer/icc-info?file=projects/my-project/photo.jpg[&thumb=1200]
+            // `file` is a Kirby file id or UUID, `thumb` one of the thumbnails.sizes widths
             'pattern' => 'thumbzer/icc-info',
             'action'  => function () {
-                $path     = get('path');
-                $identify = str_replace('convert', 'identify', kirby()->option('thumbs.bin', 'convert'));
+                $error = fn (int $code, string $message) => Response::json(
+                    ['error' => $message],
+                    $code,
+                    headers: ['Cache-Control' => 'no-store']
+                );
 
-                if (!$path || !file_exists($path)) {
-                    return \Kirby\Http\Response::json(['colorspace' => '—', 'icc' => 'absent']);
+                if (Access::can('icc') === false) {
+                    return $error(403, 'Forbidden');
                 }
 
+                // only files the user can open in the Panel
+                $file = Access::file(get('file'));
+
+                if ($file === null) {
+                    return $error(404, 'File not found');
+                }
+
+                $path = $file->root();
+
+                if (($thumb = get('thumb')) !== null) {
+                    $width = filter_var($thumb, FILTER_VALIDATE_INT);
+                    $sizes = array_map('intval', ThumbGenerator::sizes());
+
+                    if (in_array($width, $sizes, true) === false) {
+                        return $error(400, 'Unknown thumb size');
+                    }
+
+                    $path = ThumbGenerator::thumbPath($file, $width, ThumbGenerator::format());
+                }
+
+                // identify only ever runs on an existing file inside /content
+                if (($path = Access::contentPath($path)) === null) {
+                    return $error(404, 'File not found');
+                }
+
+                $identify   = str_replace('convert', 'identify', kirby()->option('thumbs.bin', 'convert'));
                 $colorspace = trim(shell_exec("{$identify} -format '%[colorspace]' " . escapeshellarg($path) . " 2>/dev/null") ?? '—');
                 $icc        = trim(shell_exec("{$identify} -verbose " . escapeshellarg($path) . " 2>/dev/null | grep -i 'Profile-icc' | awk '{print $2}'") ?? '');
 
-                return \Kirby\Http\Response::json([
-                    'colorspace' => $colorspace ?: '—',
-                    'icc'        => $icc ? $icc . 'B' : 'absent',
-                ]);
+                return Response::json(
+                    [
+                        'colorspace' => $colorspace ?: '—',
+                        'icc'        => $icc ? $icc . 'B' : 'absent',
+                    ],
+                    200,
+                    headers: ['Cache-Control' => 'no-store']
+                );
             }
         ],
         [
-            // Regenerate all thumbs for all listed pages
+            // Regenerate the missing thumbs of every listed and unlisted page (drafts are skipped)
             // GET /thumbzer/regenerate
             'pattern' => 'thumbzer/regenerate',
             'action'  => function () {
+                if (Access::can('regenerate') === false) {
+                    return new Response('Forbidden', 'text/plain', 403, [
+                        'Cache-Control' => 'no-store',
+                    ]);
+                }
+
                 set_time_limit(0);
 
                 // Stream output line by line to keep the FastCGI connection alive
                 // (avoids idle timeout when processing hundreds of images)
                 header('Content-Type: text/plain; charset=utf-8');
                 header('X-Accel-Buffering: no');
-                header('Cache-Control: no-cache');
+                header('Cache-Control: no-store');
                 while (ob_get_level() > 0) ob_end_flush();
 
                 $generated = 0;
@@ -153,22 +224,25 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
         [
             'pattern' => 'content/(:all)/thumbs/(:any)',
             'action'  => function (string $path, string $filename) {
-                $contentRoot = realpath(kirby()->root('content'));
-                $root        = realpath($contentRoot . '/' . $path . '/thumbs/' . $filename);
+                // keep the response contained in /content, since $path
+                // is attacker-controlled and may contain ../
+                $root = Access::contentPath(kirby()->root('content') . '/' . $path . '/thumbs/' . $filename);
+
+                // thumbs of drafts (generated on upload) are only served with
+                // the signature thumbUrl() adds (`?t=`), or to users logged in
+                // to the Panel, and never cached
+                $relative = $root !== null ? Access::relativePath($root) : '';
+                $draft    = $root !== null && Access::isDraftPath($relative);
+                $allowed  = $draft === false || Access::hasValidThumbToken($relative, get('t')) || Access::isPanelUser();
 
                 // a missing thumb must answer with a cheap 404, never with
                 // `return false`: Kirby turns an empty route result into a full
                 // render of the error page, so a gallery whose thumbs have not
                 // been generated yet would render the whole site once per
                 // <img srcset> entry (4 sizes x N images) instead of 404ing.
-                // keep the response contained in /content as well, since $path
-                // is attacker-controlled and may contain ../
-                if (
-                    $root === false ||
-                    $contentRoot === false ||
-                    str_starts_with($root, $contentRoot . '/') === false ||
-                    is_file($root) === false
-                ) {
+                // a draft thumb gets the same 404 for anyone else, so that
+                // draft URLs cannot be probed
+                if ($root === null || $allowed === false) {
                     return new Response('', 'text/plain', 404, [
                         'Cache-Control' => 'no-store',
                     ]);
@@ -185,7 +259,7 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
                 ];
 
                 header('Content-Type: '    . ($mimes[$ext] ?? 'application/octet-stream'));
-                header('Cache-Control: public, max-age=31536000, immutable');
+                header('Cache-Control: '   . ($draft === true ? 'private, no-store' : 'public, max-age=31536000, immutable'));
                 header('Content-Length: '  . filesize($root));
                 readfile($root);
                 exit;

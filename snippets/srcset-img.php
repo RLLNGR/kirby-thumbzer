@@ -3,7 +3,7 @@
  * Snippet: rllngr/srcset-img
  *
  * Renders a responsive <picture> element using pre-generated thumbnails.
- * Falls back to the original file for drafts, GIFs, SVGs, and missing thumbs.
+ * Falls back to the original file for GIFs and SVGs.
  *
  * Variables:
  *   $image      Kirby\Cms\File   required  The image (or video) file object
@@ -20,7 +20,7 @@ if (!$image) return;
 
 $class     = $class ?? $image->orientation();
 // kirby-visibilizer's altText(): the alt field, else its generated text
-$imageAlt  = trim($image->hasMethod('altText') ? $image->altText()->value() : $image->alt()->value()) ?: trim((string) ($alt ?? ''));
+$imageAlt  = trim((string) ($image->hasMethod('altText') ? $image->altText()->value() : $image->alt()->value())) ?:trim((string) ($alt ?? ''));
 $lazy      = $lazy ?? true;
 $breakpoint = $breakpoint ?? 'extra-large';
 $sizeAttr  = is_array($sizes ?? null) ? implode(', ', $sizes) : ($sizes ?? '');
@@ -39,9 +39,9 @@ if ($image->type() === 'video'):
 
 if ($image->type() !== 'image') return;
 
-// ── Fallback: draft, GIF, SVG ────────────────────────────────────────────────
-$isDraft = method_exists($image->page(), 'isDraft') && $image->page()->isDraft();
-if ($isDraft || in_array($image->extension(), ['gif', 'svg'])):
+// ── Fallback: GIF, SVG ───────────────────────────────────────────────────────
+// (drafts use their thumbs too: thumbUrl() signs their URLs)
+if (in_array($image->extension(), ['gif', 'svg'])):
 ?>
 <img
     class="<?= $class ?>"

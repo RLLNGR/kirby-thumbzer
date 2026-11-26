@@ -1,15 +1,21 @@
 <?php
 /**
  * Test ICC Profile — Original vs thumb existant
+ *
+ * Panel users with the icc permission only: ?file= opens any image they
+ * can access in the Panel, drafts included
  */
 
+use Rllngr\Thumbzer\Access;
 use Rllngr\Thumbzer\ThumbGenerator;
 
-if ($fileId = get('file')) {
-    $parts      = explode('/', $fileId);
-    $filename   = array_pop($parts);
-    $sourcePage = page(implode('/', $parts));
-    $img        = $sourcePage ? $sourcePage->file($filename) : null;
+$allowed = Access::can('icc');
+
+if ($allowed === false) {
+    kirby()->response()->code(403);
+    $testImages = [];
+} elseif ($fileId = get('file')) {
+    $img        = Access::file($fileId);
     $testImages = $img ? [$img] : [];
 } else {
     $testImages = $page->images()->filterBy('extension', 'in', ['jpg', 'jpeg'])->toArray(fn($img) => $img);
@@ -39,12 +45,11 @@ foreach ($testImages as $img) {
     }
 
     $items[] = [
+        'id'          => $img->id(),
         'label'       => $img->filename(),
         'page'        => $img->page()->title()->value(),
         'urlOrig'     => $img->url(),
         'urlThumb'    => $thumbUrl,
-        'pathOrig'    => $img->root(),
-        'pathThumb'   => $thumbPath,
         'thumbSize'   => $thumbSize,
         'thumbFormat' => strtoupper($format),
         'sizeOrig'    => icc_fileKb($img->root()),
@@ -314,7 +319,12 @@ foreach ($testImages as $img) {
 
 <div class="page">
 
-<?php if (empty($items)): ?>
+<?php if ($allowed === false): ?>
+  <div class="empty">
+    Réservé aux utilisateurs connectés au Panel —&nbsp;<a href="<?= kirby()->url('panel') ?>">se connecter</a>
+  </div>
+
+<?php elseif (empty($items)): ?>
   <div class="empty">
     Aucune image — ouvre depuis le panel ou dépose des JPG dans <code>content/test-icc/</code>
   </div>
@@ -340,7 +350,7 @@ foreach ($testImages as $img) {
 
       <div class="meta">
 
-        <div class="card" data-icc-path="<?= htmlspecialchars($item['pathOrig']) ?>">
+        <div class="card" data-icc-file="<?= htmlspecialchars($item['id']) ?>">
           <div class="card__title">Original — <?= $item['ext'] ?></div>
           <div class="card__rows">
             <div class="card__row">
@@ -358,7 +368,7 @@ foreach ($testImages as $img) {
           </div>
         </div>
 
-        <div class="card" data-icc-path="<?= $item['pathThumb'] ? htmlspecialchars($item['pathThumb']) : '' ?>">
+        <div class="card"<?php if ($item['hasThumb']): ?> data-icc-file="<?= htmlspecialchars($item['id']) ?>" data-icc-thumb="<?= $item['thumbSize'] ?>"<?php endif ?>>
           <div class="card__title">Thumb — <?= $item['hasThumb'] ? $item['thumbFormat'] . ' ' . $item['thumbSize'] . 'px' : 'non généré' ?></div>
           <div class="card__rows">
             <div class="card__row">
@@ -406,12 +416,14 @@ function renderBadge(icc) {
   return `<span class="badge ${ok ? 'badge--ok' : 'badge--ko'}">${ok ? icc : 'absent'}</span>`;
 }
 
-document.querySelectorAll('.card[data-icc-path]').forEach(async card => {
-  const path = card.dataset.iccPath;
-  if (!path) return;
+document.querySelectorAll('.card[data-icc-file]').forEach(async card => {
+  const params = new URLSearchParams({ file: card.dataset.iccFile });
+  if (card.dataset.iccThumb) params.set('thumb', card.dataset.iccThumb);
 
   try {
-    const res  = await fetch(`<?= kirby()->url() ?>/thumbzer/icc-info?path=${encodeURIComponent(path)}`);
+    // answers 403 once the Panel session has expired
+    const res = await fetch(`<?= kirby()->url() ?>/thumbzer/icc-info?${params}`);
+    if (!res.ok) throw new Error(`icc-info: HTTP ${res.status}`);
     const data = await res.json();
 
     const csEl    = card.querySelector('[data-icc-cs]');
@@ -420,7 +432,7 @@ document.querySelectorAll('.card[data-icc-path]').forEach(async card => {
     if (csEl)    csEl.textContent    = data.colorspace;
     if (badgeEl) badgeEl.innerHTML   = renderBadge(data.icc);
   } catch (e) {
-    card.querySelectorAll('.skel').forEach(s => s.textContent = '—');
+    card.querySelectorAll('.skel').forEach(s => s.replaceWith('—'));
   }
 });
 </script>
