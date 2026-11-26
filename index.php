@@ -26,6 +26,13 @@ $runThumbTaskSafely = static function (callable $task, string $label): void {
 // Thumbs live in the page's folder: site and user files, and the thumbs themselves, are skipped
 $skipFile = static fn ($file): bool => $file->page() === null || $file->page()->slug() === 'thumbs';
 
+// Kirby 6 has no custom sections: the ICC button is a field there, and the old section type is mapped onto it
+$isKirby6 = version_compare(Kirby::version(), '6.0.0', '>=');
+if ($isKirby6) {
+    require_once __DIR__ . '/classes/IccButtonField.php';
+    \Kirby\Blueprint\Normalizer::$sectionFields['thumbzer-icc-button'] = 'thumbzer-icc-button';
+}
+
 Kirby::plugin('rllngr/kirby-thumbzer', [
 
     // ── Options ───────────────────────────────────────────────────────────────
@@ -82,7 +89,8 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
     //     icc:
     //       type: thumbzer-icc-button
 
-    'sections' => [
+    // Kirby 4 and 5
+    'sections' => $isKirby6 ? [] : [
         'thumbzer-icc-button' => [
             'computed' => [
                 'link' => function () {
@@ -91,11 +99,14 @@ Kirby::plugin('rllngr/kirby-thumbzer', [
                         return null;
                     }
 
-                    return kirby()->url() . '/test-icc?file=' . $this->model()->id();
+                    return kirby()->url() . '/test-icc?file=' . rawurlencode($this->model()->id());
                 }
             ]
         ]
     ],
+
+    // Kirby 6
+    'fields' => $isKirby6 ? ['thumbzer-icc-button' => \Rllngr\Thumbzer\IccButtonField::class] : [],
 
     // ── Routes ────────────────────────────────────────────────────────────────
     //
