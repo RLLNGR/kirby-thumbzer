@@ -72,7 +72,15 @@ class ThumbGenerator
 
     public static function thumbUrl(File $file, int $width, string $format): string
     {
-        return kirby()->url() . '/content/' . $file->page()->diruri() . '/thumbs/' . static::thumbFilename($file, $width, $format);
+        $path = $file->page()->diruri() . '/thumbs/' . static::thumbFilename($file, $width, $format);
+        $url  = kirby()->url() . '/content/' . $path;
+
+        // drafts: signed URL, the thumbs route refuses unsigned anonymous requests
+        if (Access::isDraftPath($path) === true) {
+            $url .= '?t=' . Access::thumbToken($path);
+        }
+
+        return $url;
     }
 
     // ── Count ────────────────────────────────────────────────────────────────

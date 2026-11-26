@@ -19,7 +19,10 @@ class IccButtonField extends DisplayField
     {
         return [
             ...parent::props(),
-            'link' => $this->model()->kirby()->url() . '/test-icc?file=' . rawurlencode($this->model()->id()),
+            // no button for roles without the icc permission
+            'link' => Access::can('icc')
+                ? $this->model()->kirby()->url() . '/test-icc?file=' . rawurlencode($this->model()->id())
+                : null,
         ];
     }
 }
